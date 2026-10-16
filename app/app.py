@@ -3,7 +3,7 @@ import os
 
 import psycopg
 from dotenv import load_dotenv
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 
 load_dotenv()
 
@@ -108,7 +108,116 @@ def get_inventory():
         app.logger.exception("Failed to retrieve inventory")
         return jsonify({"error": "Unable to retrieve inventory"}), 503
 
+@app.route("/batches", methods=["POST"])
+def create_batch():
+    """Create a new production batch."""
+    data = request.get_json(silent=True)
 
+    if not data:
+        return jsonify({"error": "A JSON request body is required"}), 400
+
+    batch_number = data.get("batch_number")
+    product_sku = data.get("product_sku")
+    planned_quantity = data.get("planned_quantity")
+
+    if not batch_number or not isinstance(batch_number, str):
+        return jsonify({"error": "A valid batch_number is required"}), 400
+
+    if not product_sku or not isinstance(product_sku, str):
+        return jsonify({"error": "A valid product_sku is required"}), 400
+
+    if isinstance(planned_quantity, bool):
+        return jsonify({"error": "planned_quantity must be a positive number"}), 400
+
+    try:
+        planned_quantity = float(planned_quantity)
+        if planned_quantity <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"error": "planned_quantity must be a positive number"}), 400
+
+    try:
+        with get_db_connection() as connection:
+            product = connection.execute(
+                "SELECT id FROM products WHERE sku = %s",
+                (product_sku.strip(),),
+            ).fetchone()
+
+            if product is None:
+                return jsonify({"error": "Product not found"}), 404
+
+            batch = connection.execute(
+                """
+                INSERT INTO production_batches
+                    (batch_number, product_id, planned_quantity, status)
+                VALUES (%s, %s, %s, 'planned')
+                RETURNING id, batch_number, planned_quantity, status
+                """,
+                (batch_number.strip(), product[0], planned_quantity),
+            ).fetchone()
+
+        return jsonify({
+            "message": "Production batch created successfully",
+            "batch": {
+                "id": batch[0],
+                "batch_number": batch[1],
+                "planned_quantity": float(batch[2]),
+                "status": batch[3],
+            },
+        }), 201
+
+    except psycopg.IntegrityError:
+        return jsonify({
+            "error": "A batch with this batch_number already exists"
+        }), 409
+
+    except psycopg.Error:
+        app.logger.exception("Failed to create production batch")
+        return jsonify({"error": "Unable to create production batch"}), 503
+
+@app.route("/batches", methods=["GET"])
+def get_batches():
+    """Return all production batches."""
+    try:
+        with get_db_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    pb.id,
+                    pb.batch_number,
+                    p.sku,
+                    p.name AS product_name,
+                    pb.planned_quantity,
+                    pb.actual_quantity,
+                    pb.status,
+                    pb.created_at
+                FROM production_batches pb
+                JOIN products p ON p.id = pb.product_id
+                ORDER BY pb.created_at DESC, pb.id DESC
+                """
+            ).fetchall()
+
+        batches = [
+            {
+                "id": row[0],
+                "batch_number": row[1],
+                "product_sku": row[2],
+                "product_name": row[3],
+                "planned_quantity": float(row[4]),
+                "actual_quantity": (
+                    float(row[5]) if row[5] is not None else None
+                ),
+                "status": row[6],
+                "created_at": row[7].isoformat() if row[7] else None,
+            }
+            for row in rows
+        ]
+
+        return jsonify({"batches": batches}), 200
+
+    except psycopg.Error:
+        app.logger.exception("Failed to retrieve production batches")
+        return jsonify({"error": "Unable to retrieve production batches"}), 503
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=False)

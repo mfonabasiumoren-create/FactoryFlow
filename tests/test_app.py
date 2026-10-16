@@ -68,3 +68,78 @@ def test_inventory_success(mock_get_connection, client):
     assert len(data["inventory"]) == 3
     assert data["inventory"][0]["sku"] == "FF-HC-001"
     assert data["inventory"][0]["quantity"] == 250.0
+
+def test_create_batch_success(client):
+    mock_connection = MagicMock()
+
+    mock_connection.execute.side_effect = [
+        MagicMock(fetchone=MagicMock(return_value=(1,))),
+        MagicMock(
+            fetchone=MagicMock(
+                return_value=(1, "BATCH-001", 100.0, "planned")
+            )
+        ),
+    ]
+
+    with patch("app.app.get_db_connection") as mock_db:
+        mock_db.return_value.__enter__.return_value = mock_connection
+
+        response = client.post(
+            "/batches",
+            json={
+                "batch_number": "BATCH-001",
+                "product_sku": "FF-HC-001",
+                "planned_quantity": 100,
+            },
+        )
+
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data["batch"]["batch_number"] == "BATCH-001"
+    assert data["batch"]["planned_quantity"] == 100.0
+    assert data["batch"]["status"] == "planned"
+
+def test_create_batch_rejects_zero_quantity(client):
+    response = client.post(
+        "/batches",
+        json={
+            "batch_number": "BATCH-002",
+            "product_sku": "FF-HC-001",
+            "planned_quantity": 0,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == (
+        "planned_quantity must be a positive number"
+    )
+
+def test_get_batches_success(client):
+    mock_connection = MagicMock()
+
+    mock_connection.execute.return_value.fetchall.return_value = [
+        (
+            1,
+            "BATCH-2026-001",
+            "FF-HC-001",
+            "Laundry Detergent",
+            100.0,
+            None,
+            "planned",
+            None,
+        )
+    ]
+
+    with patch("app.app.get_db_connection") as mock_db:
+        mock_db.return_value.__enter__.return_value = mock_connection
+
+        response = client.get("/batches")
+
+    assert response.status_code == 200
+
+    data = response.get_json()
+    assert len(data["batches"]) == 1
+    assert data["batches"][0]["batch_number"] == "BATCH-2026-001"
+    assert data["batches"][0]["product_sku"] == "FF-HC-001"
+    assert data["batches"][0]["planned_quantity"] == 100.0
+    assert data["batches"][0]["status"] == "planned"
