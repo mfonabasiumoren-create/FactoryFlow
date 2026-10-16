@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: factoryflow-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: factoryflow
+      POSTGRES_USER: factoryflow_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env file}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - factoryflow_postgres_data:/var/lib/postgresql/data
+      - ./app/database/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U factoryflow_user -d factoryflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  factoryflow_postgres_data:
