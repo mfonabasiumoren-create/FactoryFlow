@@ -143,3 +143,116 @@ def test_get_batches_success(client):
     assert data["batches"][0]["product_sku"] == "FF-HC-001"
     assert data["batches"][0]["planned_quantity"] == 100.0
     assert data["batches"][0]["status"] == "planned"
+@patch("app.app.get_db_connection")
+def test_update_batch_to_in_progress(mock_get_connection, client):
+    mock_connection = MagicMock()
+
+    mock_connection.execute.side_effect = [
+        MagicMock(
+            fetchone=MagicMock(
+                return_value=(1, "planned")
+            )
+        ),
+        MagicMock(
+            fetchone=MagicMock(
+                return_value=(
+                    1,
+                    "BATCH-2026-001",
+                    "in_progress",
+                    None,
+                    None,
+                    None,
+                )
+            )
+        ),
+    ]
+
+    mock_get_connection.return_value.__enter__.return_value = (
+        mock_connection
+    )
+
+    response = client.patch(
+        "/batches/BATCH-2026-001",
+        json={"status": "in_progress"},
+    )
+
+    assert response.status_code == 200
+
+    data = response.get_json()
+    assert data["batch"]["batch_number"] == "BATCH-2026-001"
+    assert data["batch"]["status"] == "in_progress"
+
+    assert mock_connection.execute.call_count == 2
+@patch("app.app.get_db_connection")
+def test_complete_batch_success(mock_get_connection, client):
+    mock_connection = MagicMock()
+    mock_connection.execute.side_effect = [
+        MagicMock(
+            fetchone=MagicMock(
+                return_value=(1, "in_progress")
+            )
+        ),
+        MagicMock(
+            fetchone=MagicMock(
+                return_value=(
+                    1,
+                    "BATCH-2026-001",
+                    "completed",
+                    95,
+                    None,
+                    None,
+                )
+            )
+        ),
+    ]
+    mock_get_connection.return_value.__enter__.return_value = (
+        mock_connection
+    )
+
+    response = client.patch(
+        "/batches/BATCH-2026-001",
+        json={
+            "status": "completed",
+            "actual_quantity": 95,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["batch"]["status"] == "completed"
+    assert data["batch"]["actual_quantity"] == 95
+
+
+@patch("app.app.get_db_connection")
+def test_reject_invalid_batch_transition(mock_get_connection, client):
+    mock_connection = MagicMock()
+    mock_connection.execute.return_value.fetchone.return_value = (
+        1,
+        "completed",
+    )
+    mock_get_connection.return_value.__enter__.return_value = (
+        mock_connection
+    )
+
+    response = client.patch(
+        "/batches/BATCH-2026-001",
+        json={"status": "in_progress"},
+    )
+
+    assert response.status_code == 409
+
+
+@patch("app.app.get_db_connection")
+def test_update_missing_batch(mock_get_connection, client):
+    mock_connection = MagicMock()
+    mock_connection.execute.return_value.fetchone.return_value = None
+    mock_get_connection.return_value.__enter__.return_value = (
+        mock_connection
+    )
+
+    response = client.patch(
+        "/batches/BATCH-999",
+        json={"status": "in_progress"},
+    )
+
+    assert response.status_code == 404

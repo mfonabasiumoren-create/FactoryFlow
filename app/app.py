@@ -219,5 +219,119 @@ def get_batches():
         app.logger.exception("Failed to retrieve production batches")
         return jsonify({"error": "Unable to retrieve production batches"}), 503
 
+@app.route("/batches/<batch_number>", methods=["PATCH"])
+def update_batch_status(batch_number):
+    """Update production progress for a batch."""
+    data = request.get_json(silent=True)
+
+    if not isinstance(data, dict):
+        return jsonify({"error": "A JSON request body is required"}), 400
+
+    new_status = data.get("status")
+    actual_quantity = data.get("actual_quantity")
+
+    if new_status not in {"in_progress", "completed", "cancelled"}:
+        return jsonify({"error": "Invalid target status"}), 400
+
+    if new_status == "completed":
+        if isinstance(actual_quantity, bool) or not isinstance(
+            actual_quantity, int
+        ) or actual_quantity < 0:
+            return jsonify({
+                "error": "A non-negative integer actual_quantity is required"
+            }), 400
+
+    try:
+        with get_db_connection() as connection:
+            batch = connection.execute(
+                """
+                SELECT id, status
+                FROM production_batches
+                WHERE batch_number = %s
+                FOR UPDATE
+                """,
+                (batch_number,),
+            ).fetchone()
+
+            if batch is None:
+                return jsonify({"error": "Production batch not found"}), 404
+
+            current_status = batch[1]
+
+            allowed_transitions = {
+                "planned": {"in_progress", "cancelled"},
+                "in_progress": {"completed", "cancelled"},
+                "completed": set(),
+                "cancelled": set(),
+            }
+
+            if new_status not in allowed_transitions.get(current_status, set()):
+                return jsonify({
+                    "error": (
+                        f"Cannot change status from "
+                        f"{current_status} to {new_status}"
+                    )
+                }), 409
+
+            if new_status == "in_progress":
+                updated_batch = connection.execute(
+                    """
+                    UPDATE production_batches
+                    SET status = %s, started_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    RETURNING id, batch_number, status, actual_quantity,
+                              started_at, completed_at
+                    """,
+                    (new_status, batch[0]),
+                ).fetchone()
+
+            elif new_status == "completed":
+                updated_batch = connection.execute(
+                    """
+                    UPDATE production_batches
+                    SET status = %s,
+                        actual_quantity = %s,
+                        completed_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    RETURNING id, batch_number, status, actual_quantity,
+                              started_at, completed_at
+                    """,
+                    (new_status, actual_quantity, batch[0]),
+                ).fetchone()
+
+            else:
+                updated_batch = connection.execute(
+                    """
+                    UPDATE production_batches
+                    SET status = %s
+                    WHERE id = %s
+                    RETURNING id, batch_number, status, actual_quantity,
+                              started_at, completed_at
+                    """,
+                    (new_status, batch[0]),
+                ).fetchone()
+
+        return jsonify({
+            "message": "Production batch updated successfully",
+            "batch": {
+                "id": updated_batch[0],
+                "batch_number": updated_batch[1],
+                "status": updated_batch[2],
+                "actual_quantity": updated_batch[3],
+                "started_at": (
+                    updated_batch[4].isoformat()
+                    if updated_batch[4] else None
+                ),
+                "completed_at": (
+                    updated_batch[5].isoformat()
+                    if updated_batch[5] else None
+                ),
+            },
+        }), 200
+
+    except psycopg.Error:
+        app.logger.exception("Failed to update production batch")
+        return jsonify({"error": "Unable to update production batch"}), 503
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=False)
