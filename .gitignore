@@ -1,22 +1,24 @@
-# Local environment variables and secrets
+# Environment variables and secrets
 .env
 .env.*
-
-# Allow an example environment template to be committed
 !.env.example
 
-# Python cache and virtual environments
-__pycache__/
-*.py[cod]
+# Python virtual environments
 .venv/
 venv/
+env/
 
-# Test and coverage artifacts
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test and coverage files
 .pytest_cache/
 .coverage
 htmlcov/
 
-# Local logs
+# Logs
 *.log
 
 # IDE and operating system files
