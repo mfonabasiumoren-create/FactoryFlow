@@ -332,6 +332,68 @@ def update_batch_status(batch_number):
     except psycopg.Error:
         app.logger.exception("Failed to update production batch")
         return jsonify({"error": "Unable to update production batch"}), 503
+@app.route("/reports/production", methods=["GET"])
+def production_report():
+    """Return aggregate production performance metrics."""
+    try:
+        with get_db_connection() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS total_batches,
+                    COUNT(*) FILTER (
+                        WHERE status = 'completed'
+                    ) AS completed_batches,
+                    COALESCE(SUM(planned_quantity), 0)
+                        AS total_planned_quantity,
+                    COALESCE(
+                        SUM(planned_quantity)
+                        FILTER (WHERE status = 'completed'),
+                        0
+                    ) AS completed_planned_quantity,
+                    COALESCE(
+                        SUM(actual_quantity)
+                        FILTER (WHERE status = 'completed'),
+                        0
+                    ) AS total_actual_quantity
+                FROM production_batches
+                """
+            ).fetchone()
+
+        total_batches = row[0]
+        completed_batches = row[1]
+        planned_quantity = float(row[2])
+        completed_planned_quantity = float(row[3])
+        actual_quantity = float(row[4])
+
+        production_yield = (
+            round(
+                actual_quantity / completed_planned_quantity * 100, 2
+            )
+            if completed_planned_quantity > 0
+            else 0.0
+        )
+
+        quantity_variance = actual_quantity - completed_planned_quantity
+
+        return jsonify({
+            "report": {
+                "total_batches": total_batches,
+                "completed_batches": completed_batches,
+                "planned_quantity": planned_quantity,
+                "actual_quantity": actual_quantity,
+                "production_yield_percent": production_yield,
+                "quantity_variance": quantity_variance,
+            }
+        }), 200
+
+    except psycopg.Error:
+        app.logger.exception("Failed to generate production report")
+        return jsonify({
+            "error": "Unable to generate production report"
+        }), 503
+
+print(app.url_map)
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=False)
