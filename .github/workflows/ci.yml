@@ -24,10 +24,18 @@ jobs:
           cache-dependency-path: app/requirements.txt
 
       - name: Install dependencies
-        run: python -m pip install -r app/requirements.txt
+        run: python -m pip install -r app/requirements.txt PyYAML
 
       - name: Compile Python files
         run: python -m py_compile app/app.py tests/test_app.py
 
       - name: Run automated tests
         run: python -m pytest tests/ -v
+
+      - name: Validate Docker Compose configuration
+        env:
+          POSTGRES_PASSWORD: ci-only-placeholder
+        run: docker compose config --quiet
+
+      - name: Build Docker image
+        run: docker build -t factoryflow-api:${{ github.sha }} .
