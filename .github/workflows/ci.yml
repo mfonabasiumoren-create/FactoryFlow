@@ -39,3 +39,10 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t factoryflow-api:${{ github.sha }} .
+      - name: Verify Docker health check
+        run: |
+          docker image inspect factoryflow-api:${{ github.sha }} \
+            --format '{{if .Config.Healthcheck}}Health check configured{{else}}Health check missing{{end}}' \
+            | grep -q "Health check configured"
+            
+
