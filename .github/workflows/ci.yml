@@ -11,7 +11,20 @@ jobs:
   test:
     name: Test FactoryFlow API
     runs-on: ubuntu-latest
-
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: factoryflow
+          POSTGRES_USER: factoryflow_user
+          POSTGRES_PASSWORD: ci-only-placeholder
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U factoryflow_user -d factoryflow"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -39,10 +52,34 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t factoryflow-api:${{ github.sha }} .
+     
       - name: Verify Docker health check
         run: |
           docker image inspect factoryflow-api:${{ github.sha }} \
             --format '{{if .Config.Healthcheck}}Health check configured{{else}}Health check missing{{end}}' \
             | grep -q "Health check configured"
-            
+
+      - name: Run API container
+        run: |
+          docker run -d \
+            --name factoryflow-api-test \
+            --network host \
+            -e DB_HOST=127.0.0.1 \
+            -e DB_PORT=5432 \
+            -e DB_NAME=factoryflow \
+            -e DB_USER=factoryflow_user \
+            -e POSTGRES_PASSWORD=ci-only-placeholder \
+            factoryflow-api:${{ github.sha }}
+
+      - name: Verify API runtime health
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/health \
+              --output health.json; then
+              break
+            fi
+            sleep 2
+          done
+
+          python -c "import json; d=json.load(open('health.json')); assert d['status'] == 'healthy' and d['database'] == 'connected', d"
 
