@@ -1,0 +1,12 @@
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: factoryflow-postgres-config
+  namespace: factoryflow
+data:
+  POSTGRES_DB: factoryflow
+  POSTGRES_USER: factoryflow_user
+  DB_NAME: factoryflow
+  DB_USER: factoryflow_user
+  DB_PORT: "5432"

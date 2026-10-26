@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: factoryflow-ingress
+  namespace: factoryflow
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: factoryflow.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: factoryflow-api
+                port:
+                  number: 8000

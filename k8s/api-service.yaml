@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: factoryflow-api
+  namespace: factoryflow
+  labels:
+    app: factoryflow-api
+spec:
+  type: ClusterIP
+  selector:
+    app: factoryflow-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
