@@ -10,7 +10,7 @@ on:
 jobs:
   test:
     name: Test FactoryFlow API
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:17-alpine
@@ -27,10 +27,10 @@ jobs:
           --health-retries 5
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.14"
           cache: pip
